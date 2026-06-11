@@ -1,0 +1,55 @@
+{
+  "mock_gmail_contacts": [
+    {
+      "name": "Alice Johnson",
+      "email": "alice.johnson@example.com"
+    },
+    {
+      "name": "Bob Smith",
+      "email": "bob.smith@example.com"
+    },
+    {
+      "name": "Carol Lee",
+      "email": "carol.lee@example.com"
+    },
+    {
+      "name": "David Kim",
+      "email": "david.kim@example.com"
+    },
+    {
+      "name": "Emma Davis",
+      "email": "emma.davis@example.com"
+    }
+  ],
+  "mock_emails": [
+    {
+      "name": "Alice Johnson",
+      "email": "alice.johnson@example.com",
+      "content": "Hi, just checking in about the project update. Let me know if you need anything else."
+    },
+    {
+      "name": "Bob Smith",
+      "email": "bob.smith@example.com",
+      "content": [
+        "Don't forget about the team meeting tomorrow at 10 AM. See you there.",
+        "I wanted to follow up on the budget approval. Please let me know if there are any questions.",
+        "Here is the revised agenda for the meeting. I added the new discussion points we talked about."
+      ]
+    },
+    {
+      "name": "Carol Lee",
+      "email": "carol.lee@example.com",
+      "content": "Please review the attached report and send your feedback by end of day."
+    },
+    {
+      "name": "David Kim",
+      "email": "david.kim@example.com",
+      "content": "Can we reschedule our call to next Wednesday? I have a conflict on Tuesday."
+    },
+    {
+      "name": "Emma Davis",
+      "email": "emma.davis@example.com",
+      "content": "Thanks for the help earlier. I have sent the updated files to your inbox."
+    }
+  ]
+}

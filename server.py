@@ -34,8 +34,7 @@ def get_emails(name: Optional[str] = None):
     """
     service = get_gmail_service()
     query = f"from: {name}" if name else ""
-    print(query)
-    results = service.users().messages().list(userId="me", q=query, maxResults=1).execute()
+    results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
 
     # print(f"DEBUG {results}", file=sys.stderr) 
     #       => DEBUG {'messages': [{'id': '19e8f561075cb872', 'threadId': '19e8f561075cb872'}], 'nextPageToken': '00107668162830157987', 'resultSizeEstimate': 201}
@@ -54,6 +53,27 @@ def get_emails(name: Optional[str] = None):
     output = []
     for message in messages:
         msg = service.users().messages().get(userId="me", id=message["id"]).execute()
+
+        """
+            eg, msg looks like: {
+                "id": "18f3a2b1c4d5e6f7",
+                "threadId": "18f3a2b1c4d5e6f7",
+                "snippet": "Hey, just following up on...",
+                "payload": {
+                    "headers": [
+                        { "name": "From",    "value": "Bob Smith <bob@gmail.com>" },
+                        { "name": "To",      "value": "you@gmail.com" },
+                        { "name": "Subject", "value": "Follow up" },
+                        { "name": "Date",    "value": "Thu, 11 Jun 2026 10:30:00 +0000" }
+                    ],
+                    "mimeType": "text/plain",
+                    "body": {
+                    "data": "SGVsbG8gd29ybGQ=",
+                    "size": 11
+                    }
+                }
+            }
+        """
         headers = {h["name"]: h["value"] for h in msg["payload"]["headers"]}
         
         subject = headers.get("Subject", "(no-subject)")

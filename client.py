@@ -1,16 +1,14 @@
-import os
+import asyncio
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from agent import create_agent_graph
 from langchain_core.messages import HumanMessage
+from langgraph.types import Command
 
 async def assistant():
-    
-    server_path = os.path.join(os.path.dirname(__file__), "server.py")
     config = {
         "p_a_server": {
-            "transport": "stdio",
-            "command": "uv",
-            "args": ["run", server_path]
+            "transport": "streamable_http",
+            "url": "http://127.0.0.1:8000/mcp"
         }
     }
 
@@ -20,16 +18,29 @@ async def assistant():
         print(tool.name)
 
     app = create_agent_graph(tools)
+    run_config = {"configurable": {"thread_id": "thread_1"}}
 
     while True:
-        user_input = input("User: ").lower().strip()
-        if user_input in ["exit", "quit", "bye"]:
+        user_input = (await asyncio.to_thread(input, "User: ")).strip()
+        if user_input.lower() in ["exit", "quit", "bye"]:
             print("Exiting...")
             break
-        inital_state = {
-            "messages": [HumanMessage(content=user_input)]
-        }
 
-        final_response = await app.ainvoke(inital_state)
+        initial_state = {"messages": [HumanMessage(content=user_input)]}
+        response = await app.ainvoke(initial_state, config=run_config)
+
+        while response.get("__interrupt__"):
+            interrupt = response["__interrupt__"][0]
+            print(f"\nAssistant: {interrupt.value}")
+            user_reply = input(f"You, (yes / no / cancel): ").strip().lower()
+            print(f"\nResuming with: {user_reply!r}")
+            response = await app.ainvoke(
+                Command(resume=user_reply),
+                config=run_config,
+            )
+
         print("============ Final Response ====================")
-        print(final_response["messages"][-1].content)
+        print(response["messages"][-1].content)
+
+if __name__ == "__main__":
+    asyncio.run(assistant())

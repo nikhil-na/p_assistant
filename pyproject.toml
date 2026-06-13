@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiosqlite>=0.22.1",
     "bs4>=0.0.2",
     "fastmcp>=3.4.2",
     "google-api-python-client>=2.197.0",
@@ -14,4 +15,5 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.0",
     "langchain-ollama>=1.1.0",
     "langgraph>=1.2.4",
+    "langgraph-checkpoint>=4.1.1",
 ]

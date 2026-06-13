@@ -2,18 +2,25 @@ from langchain_ollama import ChatOllama
 from typing import TypedDict
 from langchain_core.messages import AnyMessage
 import operator
+import json
+import base64
 from typing import Annotated
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 from typing_extensions import Literal
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import interrupt
+from email.message import EmailMessage
+from gmail_auth import get_gmail_service
 import os
 
 load_dotenv()
 
 class MessageState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
+    draft_data: str
 
 def create_agent_graph(tools: list):
     """
@@ -45,24 +52,73 @@ def create_agent_graph(tools: list):
             tool = tools_by_name[tool_call["name"]]
             args = tool_call["args"]
             observation = await tool.ainvoke(args)
-            results.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
+
+            raw_text = observation[0].get("text", {})
+            draft_data = json.loads(raw_text)
+            if draft_data["action"] == "review_email":
+                results.append(ToolMessage(content="Email draft sent for review", tool_call_id=tool_call["id"]))
+            else:
+                results.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
 
         return {
-            "messages": results
+            "messages": results,
+            "draft_data": draft_data
         }
 
-    def should_continue(state: MessageState) -> Literal["tool_node", END]:
+    async def human_review_node(state: MessageState):
+        draft_data = state.get("draft_data", {})
+
+        user_choice = interrupt(
+            f"\n📧 Draft Email\n"
+            f"To: {draft_data['to']}\n"
+            f"Subject: {draft_data['subject']}\n"
+            f"Body: {draft_data['body']}\n\n"
+        )
+        user_choice = user_choice.strip().lower()
+
+        if user_choice == "yes":
+            service = get_gmail_service()
+            message = EmailMessage()
+            message.set_content(state["draft_data"].get("body"))
+            message["To"] = state["draft_data"].get("to")
+            message["Subject"] = state["draft_data"].get("subject")
+
+            encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            create_message = {"raw": encoded_message}
+            service.users().messages().send(userId="me", body=create_message).execute()
+
+            return {
+                "messages": [SystemMessage(content="Email sent successfully")]
+            }
+        elif user_choice=="no":
+            return {"messages": [SystemMessage(content="Email not sent. Draft discarded.")]}
+        elif user_choice== "cancel":
+            return {
+                "messages": [SystemMessage(content="Email generation cancelled")]
+            }
+        return {
+                "messages": [SystemMessage(content="Nothing happened")]
+            }
+
+    def should_continue(state: MessageState) -> Literal["tool_node", "__end__"]:
         last_message = state["messages"][-1]
         if last_message.tool_calls:
             return "tool_node"
         return END
 
+    def human_review(state: MessageState) -> Literal["human_review_node", "llm_call"]:
+        if state.get("draft_data", {}).get("action") == "review_email":
+            return "human_review_node"
+        return "llm_call"
+
     workflow = StateGraph(MessageState)
     workflow.add_node("llm_call", llm_call)
     workflow.add_node("tool_node", tool_node)
+    workflow.add_node("human_review_node", human_review_node)
 
     workflow.add_edge(START, "llm_call")
     workflow.add_conditional_edges("llm_call", should_continue, ["tool_node", END])
-    workflow.add_edge("tool_node", "llm_call")
+    workflow.add_conditional_edges("tool_node", human_review, ["human_review_node", "llm_call"])
+    workflow.add_edge("human_review_node", "llm_call")
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=MemorySaver())

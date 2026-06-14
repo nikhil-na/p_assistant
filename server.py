@@ -98,61 +98,6 @@ def get_emails(name: Optional[str] = None):
 
     return clean_email(output)
 
-# @mcp.tool
-# async def draft_email(to: str, subject: str, query: str):
-
-#     """
-#     Draft a professional email according to the user's instructions and return it for review.
-#     This tool generates a draft but does NOT send the email.
-
-#     Args:
-#         to (str): Recipient email address.
-#         subject (str): Subject of the email.
-#         query (str): User's instructions or message to base the email on.
-
-#     Returns:
-#         str: A message indicating that a draft email has been created and is ready for review.
-#     """
-
-#     service = get_gmail_service()
-#     message = EmailMessage()
-
-#     llm = ChatOllama(model="llama3.2")
-
-#     while True:
-#         system_prompt = [
-#             SystemMessage(content=(
-#             "Write a concise professional email body only. Sign off as Nikhil Aryal.")),HumanMessage(content=f"User message: {query}")
-#         ]
-
-#         body = await llm.ainvoke(system_prompt)
-
-#         print(f"DEBUG send email: {body.content}", file=sys.stderr)
-
-#         message.set_content(body.content)
-#         message["To"] = to
-#         message["Subject"] = subject
-
-#         encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-
-#         create_message = {"message": {"raw": encoded_message}}
-#         draft = service.users().drafts().create(userId="me", body=create_message).execute()
-
-#         user_choice = interrupt({
-#             "action": "draft_email",
-#             "to": to,
-#             "subject": subject,
-#             "body": body.content,
-#             "message": "Approve sending this email?(approve, regenerate, cancel): "
-#         })
-
-#         if user_choice.get("action") == "approve":
-#             return f"Email sent to {to} with subject '{subject}'"
-#         elif user_choice.get("action") == "regenerate":
-#             continue 
-#         else:
-#             return "Draft cancelled"
-
 @mcp.tool
 async def draft_send_email(to: str, subject: str, query: str):
 
@@ -167,19 +112,11 @@ async def draft_send_email(to: str, subject: str, query: str):
     Returns:
         dict: Contains the draft email details for review, including recipient, subject, and generated body.
     """
-    llm = ChatOllama(model="llama3.2")
-    prompt = [
-        SystemMessage(content=(
-            "Write a concise professional email body only. Sign off as Nikhil Aryal."
-        )), 
-        HumanMessage(content=f"User message: {query}")
-    ]
-    response = await llm.ainvoke(prompt)
     return json.dumps({
         "action": "review_email",
         "to": to,
         "subject": subject,
-        "body": response.content
+        "body": query
     })
 
 @mcp.tool

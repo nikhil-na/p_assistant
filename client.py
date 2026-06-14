@@ -26,7 +26,7 @@ async def assistant():
             print("Exiting...")
             break
 
-        initial_state = {"messages": [HumanMessage(content=user_input)]}
+        initial_state = {"messages": [HumanMessage(content=user_input)], "draft_data": None, "regenerate": False}
         response = await app.ainvoke(initial_state, config=run_config)
 
         while response.get("__interrupt__"):

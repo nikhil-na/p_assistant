@@ -1,5 +1,5 @@
 from langchain_ollama import ChatOllama
-from typing import TypedDict
+from typing import Optional, TypedDict
 from langchain_core.messages import AnyMessage
 import operator
 import json
@@ -15,12 +15,14 @@ from langgraph.types import interrupt
 from email.message import EmailMessage
 from gmail_auth import get_gmail_service
 import os
+import sys
 
 load_dotenv()
 
 class MessageState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
-    draft_data: str
+    draft_data: Optional[str]
+    regenerate: bool
 
 def create_agent_graph(tools: list):
     """
@@ -53,16 +55,27 @@ def create_agent_graph(tools: list):
             args = tool_call["args"]
             observation = await tool.ainvoke(args)
 
+            print(observation, file=sys.stderr)
+
             raw_text = observation[0].get("text", {})
-            draft_data = json.loads(raw_text)
-            if draft_data["action"] == "review_email":
-                results.append(ToolMessage(content="Email draft sent for review", tool_call_id=tool_call["id"]))
-            else:
+
+            print(f"DEBUG RAW TEXT: {raw_text}")
+            print(f"DEBUG RAW TEXT: {type(raw_text)}")
+
+            final_draft_data = None
+
+            if isinstance(raw_text, str):
+                try:
+                    final_draft_data = json.loads(raw_text)
+                    if final_draft_data["action"] == "review_email":
+                        results.append(ToolMessage(content="User wants to review the draft.", tool_call_id=tool_call["id"]))
+                except json.JSONDecodeError:
+                    pass
                 results.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
 
         return {
             "messages": results,
-            "draft_data": draft_data
+            "draft_data": final_draft_data
         }
 
     async def human_review_node(state: MessageState):
@@ -91,13 +104,16 @@ def create_agent_graph(tools: list):
                 "messages": [SystemMessage(content="Email sent successfully")]
             }
         elif user_choice=="no":
-            return {"messages": [SystemMessage(content="Email not sent. Draft discarded.")]}
-        elif user_choice== "cancel":
             return {
-                "messages": [SystemMessage(content="Email generation cancelled")]
+                "messages": [SystemMessage(content="User wants a new draft. Call draft_send_email again with the same to and subject but rewrite the body.")], 
+                "draft_data": None,
+                "regenerate": True
             }
-        return {
-                "messages": [SystemMessage(content="Nothing happened")]
+        else:
+            return {
+                "messages": [SystemMessage(content="Email generation cancelled")],
+                "draft_data": None,
+                "regenerate": False
             }
 
     def should_continue(state: MessageState) -> Literal["tool_node", "__end__"]:
@@ -107,18 +123,24 @@ def create_agent_graph(tools: list):
         return END
 
     def human_review(state: MessageState) -> Literal["human_review_node", "llm_call"]:
-        if state.get("draft_data", {}).get("action") == "review_email":
+        if state.get("draft_data", {}) and state.get("draft_data", {})["action"] == "review_email":
             return "human_review_node"
+        return "llm_call"
+    
+    def regenerate_node(state: MessageState) -> Literal["llm_call", "__end__"]:
+        if not state.get("regenerate"):
+            return "__end__"
         return "llm_call"
 
     workflow = StateGraph(MessageState)
     workflow.add_node("llm_call", llm_call)
     workflow.add_node("tool_node", tool_node)
     workflow.add_node("human_review_node", human_review_node)
+    workflow.add_node("regenerate", regenerate_node)
 
     workflow.add_edge(START, "llm_call")
     workflow.add_conditional_edges("llm_call", should_continue, ["tool_node", END])
     workflow.add_conditional_edges("tool_node", human_review, ["human_review_node", "llm_call"])
-    workflow.add_edge("human_review_node", "llm_call")
+    workflow.add_conditional_edges("human_review_node", regenerate_node, ["llm_call", END])
 
     return workflow.compile(checkpointer=MemorySaver())

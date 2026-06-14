@@ -13,7 +13,7 @@ from langchain_groq import ChatGroq
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import interrupt
 from email.message import EmailMessage
-from gmail_auth import get_gmail_service
+from gmail_auth import get_google_service
 import os
 import sys
 
@@ -90,7 +90,7 @@ def create_agent_graph(tools: list):
         user_choice = user_choice.strip().lower()
 
         if user_choice == "yes":
-            service = get_gmail_service()
+            service = get_google_service(action="email")
             message = EmailMessage()
             message.set_content(state["draft_data"].get("body"))
             message["To"] = state["draft_data"].get("to")

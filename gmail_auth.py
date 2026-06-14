@@ -11,9 +11,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/calendar"
 ]
 
-def get_gmail_service():
+def get_google_service(action):
   """Shows basic usage of the Gmail API.
   Lists the user's Gmail labels.
   """
@@ -35,5 +36,8 @@ def get_gmail_service():
     # Save the credentials for the next run
     with open("token.json", "w") as token:
       token.write(creds.to_json())
-    
-  return build("gmail", "v1", credentials=creds)
+
+  if action == "email":
+    return build("gmail", "v1", credentials=creds)
+  elif action == "calendar":
+    return build("calendar", "v3", credentials=creds)

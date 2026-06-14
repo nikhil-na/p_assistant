@@ -7,13 +7,11 @@ from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from utils import clean_email
-from email.message import EmailMessage
-from langchain_ollama import ChatOllama
-from langgraph.types import interrupt
+from datetime import datetime
 
 
 from langchain_core import outputs
-from gmail_auth import get_gmail_service
+from gmail_auth import get_google_service
 
 mcp = FastMCP("p_a_server")
 
@@ -37,7 +35,7 @@ def get_emails(name: Optional[str] = None):
     Returns:
         A readable string of emails
     """
-    service = get_gmail_service()
+    service = get_google_service(action="email")
     query = f"from: {name}" if name else ""
     results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
 
@@ -119,23 +117,6 @@ async def draft_send_email(to: str, subject: str, query: str):
         "body": query
     })
 
-@mcp.tool
-def search_contats():
-
-    """
-    Search for contacts in the user's address book.
-    """
-    return "Searched for contacts in the user's address book"
-
-@mcp.tool
-def save_contact():
-
-    """
-    Save a contact to the user's address book.
-    """
-    return "Saved contact to the user's address book"
-
-
 # FOR CALENDAR SECTION
 @mcp.tool
 def get_calendar_events():
@@ -146,12 +127,53 @@ def get_calendar_events():
     return "Got all calendar events from the user's calendar"
 
 @mcp.tool
-def create_calendar_event():
+def create_calendar_event(
+        summary: str,
+        attendees: list, 
+        start_date_time: datetime,
+        location: str,
+        end_date_time: datetime,
+        timezone:str,  
+        notes: str
+    ):
+    """
+    Create a new calendar event in the user's calendar. Use this tool when you want to schedule a new event on the user's calendar.
 
+    Args:
+        summary (str): What event is about.
+        attendees (list): List of attendees for the event.
+        start_date_time (datetime): Start date and time for the event.
+        location (str): Location of the event.
+        end_date_time (datetime): End date and time for the event.
+        timezone (str): Timezone for the event.
+        notes (str): Additional notes or description for the event.
+
+    Returns:
+        str: Confirmation message that the event was created.
     """
-    Create a new calendar event in the user's calendar.
-    """
-    return "Created a new calendar event in the user's calendar"
+
+    service = get_google_service("calendar")
+
+    formatted_attendees=[{"email": email for email in attendees}]
+
+    event_details = {
+        "summary": summary,
+        "location": location,
+        "description": notes,
+        "attendees": formatted_attendees,
+        "start": {
+            "dateTime": start_date_time.isoformat(),
+            "timeZone": timezone,
+        },
+        "end": {
+            "dateTime": end_date_time.isoformat(),
+            "timeZone": timezone,
+        }
+    }
+
+    event = service.events().insert(calendarId='primary', body=event_details).execute()
+
+    return f"Created a new calendar event in the user's calendar: {event.get('htmlLink')}"
 
 @mcp.tool
 def update_calendar_event():

@@ -57,21 +57,25 @@ def create_agent_graph(tools: list):
 
             print(observation, file=sys.stderr)
 
-            raw_text = observation[0].get("text", {})
-
-            print(f"DEBUG RAW TEXT: {raw_text}")
-            print(f"DEBUG RAW TEXT: {type(raw_text)}")
-
             final_draft_data = None
-
-            if isinstance(raw_text, str):
-                try:
-                    final_draft_data = json.loads(raw_text)
-                    if final_draft_data["action"] == "review_email":
-                        results.append(ToolMessage(content="User wants to review the draft.", tool_call_id=tool_call["id"]))
-                except json.JSONDecodeError:
-                    pass
+            # THIS NEEDED FOR THE GET_CURRENT_DATETIME FUNCTION WHERE
+            # THE RETURNED VALUE IS STRAIGHT "STRING"
+            if isinstance(observation, str):
                 results.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
+            else:
+                raw_text = observation[0].get("text", {})
+
+                print(f"DEBUG RAW TEXT: {raw_text}")
+                print(f"DEBUG RAW TEXT: {type(raw_text)}")
+
+                if isinstance(raw_text, str):
+                    try:
+                        final_draft_data = json.loads(raw_text)
+                        if final_draft_data["action"] == "review_email":
+                            results.append(ToolMessage(content="User wants to review the draft.", tool_call_id=tool_call["id"]))
+                    except json.JSONDecodeError:
+                        pass
+                    results.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
 
         return {
             "messages": results,

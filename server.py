@@ -3,12 +3,13 @@ from fastmcp import FastMCP
 import json
 import sys
 import base64
+import pytz
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from utils import clean_email
 from datetime import datetime
-
+from langchain_core.tools import tool
 
 from langchain_core import outputs
 from gmail_auth import get_google_service
@@ -21,6 +22,46 @@ with open("dummy.json", "r") as f:
 MOCK_EMAILS = data["mock_emails"]
 MOCK_GMAIL_CONTACTS = data["mock_gmail_contacts"]
 
+## TOOLS
+@tool
+def get_current_datetime(timezone:str='America/Chicago'):
+    """
+    Get the current date and time. Always call this tool first when the user
+    mentions relative dates like 'tomorrow', 'next week', 'in 2 hours', 'on Friday'.
+    Args:
+        timezone: the timezone to use, e.g. 'America/New_York', 'Asia/Kathmandu', 'UTC'
+        timezone: defaults to 'America/Chicago' if not specified by user
+
+    Returns:
+        Current date and time as a string
+    """
+    tz = pytz.timezone(timezone)
+    now = datetime.now(tz)
+    return (
+        f"Current datetime: {now.strftime('%A, %B %d, %Y %I:%M %p %Z')}\n"
+        f"ISO 8601: {now.isoformat()}\n"
+        f"Timezone offset: {now.strftime('%z')}\n"
+        f"Use this offset when constructing datetimes: e.g. 2026-06-15T00:00:00{now.strftime('%z')}"
+    )
+
+#HELPER FUNCTION
+def get_all_events(timeMin:datetime, timeMax:datetime):
+    """
+    Get calendar events within a specified time range.
+
+    Args:
+        timeMin datetime: Start time for retrieving events.
+        timeMax datetime: End time for retrieving events.
+
+    Returns:
+        str: All calendar events from the user's calendar within the specified time range.
+    """
+
+    service = get_google_service("calendar")
+
+    events_result = service.events().list(calendarId="primary", timeMin=timeMin.isoformat(), timeMax=timeMax.isoformat(), singleEvents=True).execute()
+    
+    return events_result.get('items', [])
 
 # FOR EMAILS SECTION
 @mcp.tool
@@ -119,12 +160,21 @@ async def draft_send_email(to: str, subject: str, query: str):
 
 # FOR CALENDAR SECTION
 @mcp.tool
-def get_calendar_events():
+def get_calendar_events(timeMin:Optional[datetime], timeMax:Optional[datetime]):
 
     """
-    Get all calendar events from the user's calendar.
+    Get calendar events within a specified time range.
+
+    Args:
+        timeMin Optional(datetime): Start time for retrieving events.
+        timeMax Optional(datetime): End time for retrieving events.
+
+    Returns:
+        str: All calendar events from the user's calendar within the specified time range.
     """
-    return "Got all calendar events from the user's calendar"
+
+    events = get_all_events(timeMin, timeMax)
+    return f"Got all calendar events from the user's calendar: {events}"
 
 @mcp.tool
 def create_calendar_event(
@@ -184,12 +234,37 @@ def update_calendar_event():
     return "Updated a calendar event in the user's calendar"
 
 @mcp.tool
-def delete_calendar_event():
+def delete_calendar_event(email:str, timeMin:Optional[datetime], timeMax:Optional[datetime]):
 
     """
-    Delete a calendar event from the user's calendar.
+    Delete calendar events from the user's calendar.
+
+    Args:
+        email: The email address of the attendee to match.
+        timeMin Optional(datetime): Start time for retrieving events.
+        timeMax Optional(datetime): End time for retrieving events.
+
+    Returns:
+        str: Confirmation message that the event was deleted.
     """
-    return "Deleted a calendar event from the user's calendar"
+
+    service = get_google_service("calendar")
+    events = get_all_events(timeMin, timeMax)
+
+    if not events:
+        return f"Didn't find the event with the {email}"
+
+    for event in events:
+        attendees = event.get("attendees", [])
+        for attendee in attendees:
+            debug_email = attendee.get("email")
+            print(f"DEBUG EMAIL FINAL: {debug_email}", file=sys.stderr)
+            if attendee.get("email", "").lower() == email.lower().strip():
+                event_id = event["id"]
+                service.events().delete(calendarId="primary", eventId=event_id).execute()
+            else:
+                return f"The email didn't match."
+    return "The event is successfully deleted!"
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http", host="127.0.0.1", port=8000)

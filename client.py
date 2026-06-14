@@ -3,6 +3,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from agent import create_agent_graph
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
+from server import get_current_datetime
 
 async def assistant():
     config = {
@@ -13,7 +14,7 @@ async def assistant():
     }
 
     client = MultiServerMCPClient(config)
-    tools = await client.get_tools()
+    tools = await client.get_tools() + [get_current_datetime]
     for tool in tools:
         print(tool.name)
 

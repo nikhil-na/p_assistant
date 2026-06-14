@@ -16,4 +16,5 @@ dependencies = [
     "langchain-ollama>=1.1.0",
     "langgraph>=1.2.4",
     "langgraph-checkpoint>=4.1.1",
+    "pytz>=2026.2",
 ]

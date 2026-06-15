@@ -29,6 +29,7 @@ def create_agent_graph(tools: list):
     Create a graph of agents and their relationships.
     """
     llm = ChatGroq(model="qwen/qwen3-32b", api_key=os.getenv("GROQ_API_KEY"))
+    # llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
     # llm = ChatOllama(model="llama3.2")
     llm_with_tools = llm.bind_tools(tools)
     tools_by_name = {tool.name: tool for tool in tools}

@@ -226,11 +226,56 @@ def create_calendar_event(
     return f"Created a new calendar event in the user's calendar: {event.get('htmlLink')}"
 
 @mcp.tool
-def update_calendar_event():
+def update_calendar_event(initial_time_min: datetime, initial_time_max: datetime, new_time_min: datetime, new_time_max: datetime, email: Optional[str], summary: Optional[str], name: Optional[str]):
 
     """
-    Update a calendar event in the user's calendar.
+    Update a calendar event in the user's calendar. Use this method when the user wants to make a change to their event. This should have a human approval too where the user should be prompted to give his feedback.
+    
+    Args:
+        initial_time_min (datetime): Start time for retrieving the event.
+        initial_time_max (datetime): End time for retrieving the event.
+        new_time_min (datetime): New start time for the event.
+        new_time_max (datetime): New end time for the event.
+        email (Optional[str]): Email address of the attendee if provided to modify.
+        summary (Optional[str]): Name of the event to update.
+        name (Optional[str]): Name of the attendee if provided
+    
+    Returns:
+        str: Confirmation message that the event was updated.
     """
+
+    ## TODO: Shift time and Duration: (e.g., "Move my 30-minute sync from 2 PM to 4 PM").
+    ## TODO: Modify Attendees.
+        # Add: Append a new email dictionary {"email": "new_guest@example.com"} to the existing list.
+
+        # Remove: Filter out a specific email from the existing list before sending the update.
+
+    service = get_google_service("calendar")
+    events = get_all_events(initial_time_min, initial_time_max)
+
+    updated_body = {
+        "start": {"dateTime": new_time_min.isoformat(), "timeZone": "America/Chicago"},
+        "end": {"dateTime": new_time_max.isoformat(), "timeZone": "America/Chicago"},
+    }
+
+    if not events:
+        return "No calendar event found!"
+
+    match_found = None
+    for event in events:
+        attendees = event.get("attendees", [])
+        for attendee in attendees:
+            if email and attendee.get("email", "").lower() == email.strip().lower():
+                match_found = True
+            if name and attendee.get("displayName", "") == name.strip().lower():
+                match_found = True
+        if initial_time_min.isoformat() <= event.get("start", {}).get("dateTime", "")<= initial_time_max.isoformat():
+            match_found=True
+        
+        if match_found:
+            event_id = event["id"]
+            service.events().patch(calendarId="primary", eventId=event_id, sendUpdates="all", body=updated_body).execute()
+
     return "Updated a calendar event in the user's calendar"
 
 @mcp.tool

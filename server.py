@@ -4,6 +4,7 @@ import json
 import sys
 import base64
 import pytz
+import uuid
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -204,7 +205,7 @@ def create_calendar_event(
 
     service = get_google_service("calendar")
 
-    formatted_attendees=[{"email": email for email in attendees}]
+    formatted_attendees=[{"email": email} for email in attendees]
 
     event_details = {
         "summary": summary,
@@ -218,15 +219,21 @@ def create_calendar_event(
         "end": {
             "dateTime": end_date_time.isoformat(),
             "timeZone": timezone,
+        },
+        "conferenceData": {
+        "createRequest": {
+            "requestId": str(uuid.uuid4()),  # must be unique per request
+            "conferenceSolutionKey": {"type": "hangoutsMeet"}
         }
     }
+    }
 
-    event = service.events().insert(calendarId='primary', body=event_details).execute()
+    event = service.events().insert(calendarId='primary', body=event_details,conferenceDataVersion=1).execute()
 
     return f"Created a new calendar event in the user's calendar: {event.get('htmlLink')}"
 
 @mcp.tool
-def update_calendar_event(initial_time_min: datetime, initial_time_max: datetime, new_time_min: datetime, new_time_max: datetime, email: Optional[str], summary: Optional[str], name: Optional[str]):
+def update_calendar_event(initial_time_min: datetime, initial_time_max: datetime, new_attendee: Optional[str]= None, new_time_min: Optional[datetime]=None, new_time_max: Optional[datetime]=None, email: Optional[str]=None, summary: Optional[str]=None, name: Optional[str]=None):
 
     """
     Update a calendar event in the user's calendar. Use this method when the user wants to make a change to their event. This should have a human approval too where the user should be prompted to give his feedback.
@@ -234,29 +241,25 @@ def update_calendar_event(initial_time_min: datetime, initial_time_max: datetime
     Args:
         initial_time_min (datetime): Start time for retrieving the event.
         initial_time_max (datetime): End time for retrieving the event.
-        new_time_min (datetime): New start time for the event.
-        new_time_max (datetime): New end time for the event.
-        email (Optional[str]): Email address of the attendee if provided to modify.
+        new_attendee (Optional[str]): Email address of the new attendee to add.
+        new_time_min (Optional[datetime]): New start time for the event.
+        new_time_max (Optional[datetime]): New end time for the event.
+        email (Optional[str]): Email address of the attendee to match and modify.
         summary (Optional[str]): Name of the event to update.
-        name (Optional[str]): Name of the attendee if provided
+        name (Optional[str]): Name of the attendee to match.
     
     Returns:
         str: Confirmation message that the event was updated.
     """
 
-    ## TODO: Shift time and Duration: (e.g., "Move my 30-minute sync from 2 PM to 4 PM").
-    ## TODO: Modify Attendees.
-        # Add: Append a new email dictionary {"email": "new_guest@example.com"} to the existing list.
-
-        # Remove: Filter out a specific email from the existing list before sending the update.
-
     service = get_google_service("calendar")
     events = get_all_events(initial_time_min, initial_time_max)
 
-    updated_body = {
-        "start": {"dateTime": new_time_min.isoformat(), "timeZone": "America/Chicago"},
-        "end": {"dateTime": new_time_max.isoformat(), "timeZone": "America/Chicago"},
-    }
+    updated_body = {}
+
+    if new_time_min and new_time_max:
+        updated_body["start"] = {"dateTime": new_time_min.isoformat(), "timeZone": "America/Chicago"}
+        updated_body["end"] = {"dateTime": new_time_max.isoformat(), "timeZone": "America/Chicago"}
 
     if not events:
         return "No calendar event found!"
@@ -264,22 +267,76 @@ def update_calendar_event(initial_time_min: datetime, initial_time_max: datetime
     match_found = None
     for event in events:
         attendees = event.get("attendees", [])
-        for attendee in attendees:
-            if email and attendee.get("email", "").lower() == email.strip().lower():
-                match_found = True
-            if name and attendee.get("displayName", "") == name.strip().lower():
-                match_found = True
-        if initial_time_min.isoformat() <= event.get("start", {}).get("dateTime", "")<= initial_time_max.isoformat():
-            match_found=True
-        
-        if match_found:
-            event_id = event["id"]
-            service.events().patch(calendarId="primary", eventId=event_id, sendUpdates="all", body=updated_body).execute()
 
-    return "Updated a calendar event in the user's calendar"
+        if initial_time_min.isoformat() <= event.get("start", {}).get("dateTime", "")<= initial_time_max.isoformat():
+            match_found = True
+        if email:
+            for attendee in attendees:
+                if attendee.get("email", "").lower() == email.strip().lower():
+                    match_found = True
+        if name:
+            for attendee in attendees:
+                if attendee.get("displayName", "").lower() == name.strip().lower():
+                    match_found = True
+        if summary:
+            if summary.lower() in event.get("summary", "").lower():
+                match_found = True
+
+        if match_found:
+            # handle new attendee — check for duplicate first
+            if new_attendee:
+                existing_emails = [a.get("email", "").lower() for a in attendees]
+                if new_attendee.lower() not in existing_emails:
+                    attendees.append({"email": new_attendee})
+                updated_body["attendees"] = attendees
+            service.events().patch(calendarId="primary", eventId=event["id"], sendUpdates="all", body=updated_body).execute()
+            return "Updated a calendar event in the user's calendar"
+    return "No matching event found with the provided details."
 
 @mcp.tool
-def delete_calendar_event(email:str, timeMin:Optional[datetime], timeMax:Optional[datetime]):
+def remove_attendee(time_min: datetime, time_max: datetime, email_attendee: str):
+
+    """
+    Remove an attendee from calendar events within the given time range.
+
+    Use this when you need to remove a specific attendee from events that fall within a given start and end time window.
+
+    Args:
+        time_min (datetime): Start of the time window to search for events.
+        time_max (datetime): End of the time window to search for events.
+        email_attendee (str): Email address of the attendee to remove.
+
+    Returns:
+        str: A message confirming removal or indicating no events were found.
+    """
+
+    service = get_google_service("calendar")
+    events = get_all_events(time_min, time_max)
+    if not events:
+        return "No events found at this time!"
+
+    attendee_removed = False  # Track if we actually deleted someone
+
+    for event in events:
+        attendees = event.get("attendees", [])
+        # Filter out the matching email
+        updated_attendee = [
+            a for a in attendees
+            if a.get("email", "").lower() != email_attendee.lower().strip()
+        ]
+        print(f"DEBUG ATTENDEE: {updated_attendee}", file=sys.stderr)
+        # If the filtered list is shorter, we found a match and removed them!
+        if len(updated_attendee) < len(attendees):
+            updated_body = {"attendees": updated_attendee}
+            service.events().patch(calendarId="primary", eventId=event["id"], body=updated_body).execute()
+            attendee_removed = True
+            
+    if attendee_removed:
+        return "Attendee removed successfully!!"
+    return "No match found for that attendee within the given timeframe!"
+
+@mcp.tool
+def delete_calendar_event(email:str, timeMin:Optional[datetime]=None, timeMax:Optional[datetime]=None):
 
     """
     Delete calendar events from the user's calendar.
